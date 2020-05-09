@@ -51,6 +51,54 @@ def parse_report(report):
     }
 
 
+# (0 for but, 1 for because, 2 for however)
+# from https://github.com/arguman/arguman.org/blob/master/docs/api/arguments/create_premise.md
+PREMISE_TYPE_TO_TEXT = {0: "but", 1: "because", 2: "however"}
+
+
+def get_approved_premises(title):
+    res = requests.get(
+        ARGUMAN_API_URL + "/arguments",
+        headers=user_agent_header,
+        params={"search": title},
+    )
+    res.raise_for_status()
+    argument_json = res.json()
+
+    if argument_json["count"] == 0:
+        return []
+
+    argument_title = argument_json["results"][0]["title"]
+    url = ARGUMAN_ROOT_URL + "/" + argument_json["results"][0]["slug"]
+
+    premises = []
+
+    for premise in argument_json["results"][0]["premises"]:
+        if len(premise["supporters"]) == 0:
+            continue
+
+        if not premise["parent"]:  # only get parents of the root argument
+            continue
+
+        premise_content = premise["text"]
+        premise_type = PREMISE_TYPE_TO_TEXT[premise["premise_type"]]
+        n_supporters = len(premise["supporters"])
+
+        premises.append(
+            {
+                "title": argument_title,
+                "url": url,
+                "premise_content": premise_content,
+                "premise_type": premise_type,
+                "fallacy_type": "None",
+                "fallacy_reason": "",
+                "n_supporters": n_supporters,
+            }
+        )
+
+    return premises
+
+
 def main():
     print("Loading fallacy reports...")
     reports = []
@@ -64,6 +112,15 @@ def main():
     path = "./data/fallacies.csv"
     df.to_csv(path)
     print(f"Saved reports to {path}")
+
+    approved_premises = []
+    for _, row in tqdm(df.iterrows()):
+        approved_premises += get_approved_premises(row.title)
+
+    approved_df = pd.DataFrame(approved_premises)
+    path = "../data/approved.csv"
+    approved_df.to_csv(path)
+    print(f"Saved approved reports to {path}")
 
 
 if __name__ == "__main__":
